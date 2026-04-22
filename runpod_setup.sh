@@ -64,15 +64,17 @@ PY
 # 7. Weights — download only what the chosen profile needs.
 #
 # Profiles (set INFTALK_PROFILE before running this script):
-#   single           Single-person, full precision           ~38 GB total
-#   single_fp8       Single-person, fp8 quantized            ~58 GB total  (uses ~half the VRAM)
-#   single_int8_lora Single-person, int8 + distilled LoRA    ~58 GB total  (4-8 step inference)
-#   multi            Multi-person, full precision            ~38 GB total
-#   multi_fp8        Multi-person, fp8 quantized             ~58 GB total
-#   all              Full repo (single + multi + every quant) ~197 GB
 #
-# Default is "single" — change with: INFTALK_PROFILE=single_fp8 bash runpod_setup.sh
-PROFILE="${INFTALK_PROFILE:-single}"
+#   single_lightx2v  Single-person + LightX2V LoRA, 4 steps    ~39 GB  *** FAST, A100/H100 default ***
+#   single_fusionx   Single-person + FusionX LoRA, 8 steps     ~39 GB    fast, slightly better quality than lightx2v
+#   single           Single-person, full precision, 40 steps   ~38 GB    best quality, slowest
+#   single_fp8       Single-person, fp8 quantized              ~58 GB    half VRAM, ~40 steps
+#   multi            Multi-person, full precision, 40 steps    ~38 GB
+#   multi_fp8        Multi-person, fp8 quantized               ~58 GB
+#   all              Full repo (single + multi + every quant)  ~197 GB
+#
+# Default is "single_lightx2v" — change with: INFTALK_PROFILE=single bash runpod_setup.sh
+PROFILE="${INFTALK_PROFILE:-single_lightx2v}"
 
 pip install "huggingface_hub[cli]"
 mkdir -p weights
@@ -88,6 +90,30 @@ huggingface-cli download TencentGameMate/chinese-wav2vec2-base model.safetensors
 
 # --- profile-specific InfiniteTalk weights ---
 case "$PROFILE" in
+  single_lightx2v)
+    # Single-person, full-precision base + LightX2V distilled LoRA (4 sampling steps).
+    # Recommended for A100 / H100 / RTX 4090. ~4x faster than the 40-step default.
+    huggingface-cli download MeiGen-AI/InfiniteTalk \
+        --include "single/*" \
+        --local-dir ./weights/InfiniteTalk
+    huggingface-cli download Kijai/WanVideo_comfy \
+        Wan21_T2V_14B_lightx2v_cfg_step_distill_lora_rank32.safetensors \
+        --local-dir ./weights
+    INFTALK_FILE="weights/InfiniteTalk/single/infinitetalk.safetensors"
+    EXTRA_FLAGS=$'--lora-dir weights/Wan21_T2V_14B_lightx2v_cfg_step_distill_lora_rank32.safetensors \\\n    --lora-scale 1.0 \\\n    --extra-args --sample_steps 4 --sample_text_guide_scale 1.0 --sample_audio_guide_scale 2.0 --sample_shift 2 --mode streaming --motion_frame 9'
+    ;;
+  single_fusionx)
+    # Single-person, full-precision base + FusionX LoRA (8 sampling steps).
+    # ~5x faster than 40-step, slightly higher quality than lightx2v.
+    huggingface-cli download MeiGen-AI/InfiniteTalk \
+        --include "single/*" \
+        --local-dir ./weights/InfiniteTalk
+    huggingface-cli download vrgamedevgirl84/Wan14BT2VFusioniX \
+        Wan2.1_I2V_14B_FusionX_LoRA.safetensors \
+        --local-dir ./weights
+    INFTALK_FILE="weights/InfiniteTalk/single/infinitetalk.safetensors"
+    EXTRA_FLAGS=$'--lora-dir weights/Wan2.1_I2V_14B_FusionX_LoRA.safetensors \\\n    --lora-scale 1.0 \\\n    --extra-args --sample_steps 8 --sample_text_guide_scale 1.0 --sample_audio_guide_scale 2.0 --sample_shift 2 --mode streaming --motion_frame 9'
+    ;;
   single)
     huggingface-cli download MeiGen-AI/InfiniteTalk \
         --include "single/*" \
@@ -103,15 +129,6 @@ case "$PROFILE" in
         --local-dir ./weights/InfiniteTalk
     INFTALK_FILE="weights/InfiniteTalk/quant_models/infinitetalk_single_fp8.safetensors"
     EXTRA_FLAGS="--quant fp8 --quant-dir weights/InfiniteTalk/quant_models/infinitetalk_single_fp8.json"
-    ;;
-  single_int8_lora)
-    huggingface-cli download MeiGen-AI/InfiniteTalk \
-        --include "quant_models/infinitetalk_single_int8_lora.*" \
-        --include "quant_models/t5_fp8.*" \
-        --include "quant_models/t5_map_fp8.json" \
-        --local-dir ./weights/InfiniteTalk
-    INFTALK_FILE="weights/InfiniteTalk/quant_models/infinitetalk_single_int8_lora.safetensors"
-    EXTRA_FLAGS="--quant int8 --quant-dir weights/InfiniteTalk/quant_models/infinitetalk_single_int8_lora.json"
     ;;
   multi)
     huggingface-cli download MeiGen-AI/InfiniteTalk \
@@ -137,7 +154,7 @@ case "$PROFILE" in
     ;;
   *)
     echo "ERROR: unknown INFTALK_PROFILE='$PROFILE'."
-    echo "Valid: single | single_fp8 | single_int8_lora | multi | multi_fp8 | all"
+    echo "Valid: single_lightx2v | single_fusionx | single | single_fp8 | multi | multi_fp8 | all"
     exit 1
     ;;
 esac
