@@ -1,21 +1,45 @@
-opencv-python>=4.9.0.80
+# InfiniteTalk + API server consolidated requirements
+# Verified against PyPI on 2026-04-22.
+
+# --- Core ML / diffusion stack ---
+# transformers v5 introduces breaking changes; pin to 4.x until upstream model code is ported.
+transformers>=4.49.0,<5
+tokenizers>=0.20.3,<0.23
 diffusers>=0.31.0
-transformers>=4.49.0
-tokenizers>=0.20.3
 accelerate>=1.1.1
-tqdm
-imageio
-easydict
-ftfy
-dashscope
-imageio-ffmpeg
-scikit-image   
-loguru
-gradio>=5.0.0
+optimum-quanto>=0.2.7
+
+# --- Numerical / image / video ---
+# numpy 2.x breaks several pinned C-extensions in this stack (xfuser, decord fork). Keep <2.
 numpy>=1.23.5,<2
-xfuser>=0.4.1
-pyloudnorm
-optimum-quanto==0.2.6
-scenedetect
+opencv-python>=4.9.0.80
+scikit-image
+imageio
+imageio-ffmpeg
+# Original `decord` (PyPI) is unmaintained since 2021. eva-decord is a drop-in fork
+# that preserves the `import decord` API used in wan/utils/{utils,vace_processor,qwen_vl_utils}.py.
+eva-decord>=0.6.1
+# moviepy is pinned to 1.0.3 because wan/utils/segvideo.py uses `from moviepy.editor import *`,
+# which was removed in moviepy 2.x. Do not bump without porting the import.
 moviepy==1.0.3
-decord
+scenedetect>=0.6.7
+
+# --- Distributed inference ---
+xfuser>=0.4.5
+
+# --- Audio ---
+pyloudnorm
+
+# --- UI / CLI / utilities ---
+gradio>=5.0.0
+tqdm
+loguru
+ftfy
+easydict
+dashscope
+
+# --- API server (was api_requirements.txt) ---
+fastapi>=0.115
+uvicorn[standard]>=0.30
+# 0.0.18+ fixes CVE-2024-53981 (DoS via malformed multipart).
+python-multipart>=0.0.18

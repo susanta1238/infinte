@@ -28,9 +28,8 @@ pip install misaki[en]
 pip install psutil packaging wheel ninja
 pip install flash_attn==2.7.4.post1
 
-# 5. Repo deps + API deps
+# 5. Repo deps + API deps (consolidated)
 pip install -r requirements.txt
-pip install -r api_requirements.txt
 
 # 6. Weights (~40 GB, one-time)
 pip install "huggingface_hub[cli]"
