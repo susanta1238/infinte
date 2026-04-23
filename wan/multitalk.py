@@ -20,7 +20,17 @@ import torchvision.transforms as transforms
 import torch.nn.functional as F
 import torch.nn as nn
 from tqdm import tqdm
-from diffusers.models.modeling_utils import no_init_weights, ContextManagers
+# `no_init_weights` and `ContextManagers` were moved out of diffusers in 0.31+.
+# Both actually originate in `transformers`; import from the canonical locations
+# with a safety fallback for environments that still expose the diffusers alias.
+try:
+    from transformers.modeling_utils import no_init_weights
+except ImportError:
+    from diffusers.models.modeling_utils import no_init_weights  # type: ignore
+try:
+    from transformers.utils import ContextManagers
+except ImportError:
+    from diffusers.models.modeling_utils import ContextManagers  # type: ignore
 import accelerate
 
 from .distributed.fsdp import shard_model
