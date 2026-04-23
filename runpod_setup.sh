@@ -14,11 +14,18 @@ apt-get update
 apt-get install -y ffmpeg git git-lfs
 git lfs install
 
-# 1. Clone (skip if the repo is already mounted)
-if [ ! -d InfiniteTalk ]; then
-  git clone https://github.com/MeiGen-AI/InfiniteTalk.git
+# 1. Clone only if not already inside the repo.
+#    If the script is run from /workspace/InfiniteTalk where api.py already
+#    exists, skip cloning -- otherwise we'd end up with a nested duplicate
+#    and weights would land in the wrong place.
+if [ -f api.py ] && [ -f runpod_setup.sh ]; then
+    echo "already inside the InfiniteTalk repo at $(pwd) -- skipping clone"
+elif [ -d InfiniteTalk ]; then
+    cd InfiniteTalk
+else
+    git clone https://github.com/MeiGen-AI/InfiniteTalk.git
+    cd InfiniteTalk
 fi
-cd InfiniteTalk
 
 # 2. Sanity-check the pre-installed torch matches what we pin.
 #    The base image ships torch 2.4.0+cu124 -- if that is still the case we use
