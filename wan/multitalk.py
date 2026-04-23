@@ -721,21 +721,22 @@ class InfiniteTalkPipeline:
                     latent_model_input = [latent.to(self.device)]
 
                     # inference with CFG strategy
+                    # Note: per-forward torch_gc() calls removed from the hot
+                    # loop. On A100 80GB there is no memory pressure, and each
+                    # empty_cache() forces a CUDA sync (~200-400ms each, adding
+                    # up to ~1s per diffusion step). Kept only at chunk
+                    # boundaries.
                     noise_pred_cond = self.model(
-                    latent_model_input, t=timestep, **arg_c)[0] 
-                    torch_gc()
+                    latent_model_input, t=timestep, **arg_c)[0]
 
                     if math.isclose(text_guide_scale, 1.0):
                         noise_pred_drop_audio = self.model(
-                            latent_model_input, t=timestep, **arg_null_audio)[0]  
-                        torch_gc()
+                            latent_model_input, t=timestep, **arg_null_audio)[0]
                     else:
                         noise_pred_drop_text = self.model(
-                            latent_model_input, t=timestep, **arg_null_text)[0] 
-                        torch_gc()
+                            latent_model_input, t=timestep, **arg_null_text)[0]
                         noise_pred_uncond = self.model(
-                            latent_model_input, t=timestep, **arg_null)[0]  
-                        torch_gc()
+                            latent_model_input, t=timestep, **arg_null)[0]
 
                     if extra_args.use_apg:
                         # correct update direction

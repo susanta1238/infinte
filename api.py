@@ -119,12 +119,42 @@ class Job:
     image_path: str = ""
     audio_path: str = ""
     output_path: str = ""
+    # Length cap for generation (frames at the pipeline's 25 fps output rate).
+    # 0 means "auto-derive from audio duration + small safety margin".
+    max_frames: int = 0
+    # When True, generated video length is capped by max_frames alone. When
+    # False (default), the pipeline auto-stops once the audio is consumed.
+    offload_model: bool = False
     error: Optional[str] = None
     created_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
     updated_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
 
     def touch(self) -> None:
         self.updated_at = datetime.utcnow().isoformat()
+
+
+# ----------------------------- helpers ---------------------------------------
+
+def _audio_duration_seconds(path: Path) -> float:
+    """Read duration of an audio file. Uses soundfile (fast, header-only read).
+    Falls back to librosa if soundfile can't handle the format."""
+    try:
+        import soundfile as sf
+        with sf.SoundFile(str(path)) as f:
+            return float(f.frames) / float(f.samplerate)
+    except Exception as e:
+        log.warning(f"soundfile failed on {path}: {e}; falling back to librosa")
+        import librosa
+        y, sr = librosa.load(str(path), sr=None, mono=True)
+        return float(len(y)) / float(sr)
+
+
+def _audio_to_max_frames(duration_s: float, fps: int = 25,
+                         safety_frames: int = 25) -> int:
+    """Convert audio duration in seconds to a frame-count cap for the pipeline.
+    Uses 25 fps (the output save rate used by save_video_ffmpeg) plus a 1-second
+    safety margin so the pipeline's chunked loop doesn't stop one chunk short."""
+    return int(duration_s * fps) + safety_frames
 
 
 # ----------------------------- job store -------------------------------------
@@ -246,6 +276,19 @@ class InfiniteTalkRunner:
             cmd += ["--lora_dir", *self.args.lora_dir]
             if self.args.lora_scale:
                 cmd += ["--lora_scale", *[str(s) for s in self.args.lora_scale]]
+
+        # Frame budget: pass our per-job cap so streaming mode covers the full
+        # audio duration instead of truncating at the upstream default of 1000
+        # frames (= 40s @ 25fps).
+        if job.max_frames > 0:
+            cmd += ["--max_frame_num", str(job.max_frames)]
+
+        # Offload default: on single A100 (80GB or 40GB) we have plenty of VRAM
+        # to keep the model resident across chunks. The upstream auto-default
+        # offloads the 18GB DiT to CPU at every chunk boundary, costing ~10s
+        # per chunk of PCIe transfer. Only opt in if the user explicitly asks.
+        cmd += ["--offload_model", "True" if job.offload_model else "False"]
+
         if self.args.extra_args:
             cmd += self.args.extra_args
 
@@ -405,7 +448,9 @@ def create_app(runner_args) -> FastAPI:
         audio: UploadFile = File(..., description="Speech audio, wav preferred"),
         prompt: str = Form("A person talking to the camera."),
         size: str = Form("infinitetalk-480"),
-        mode: str = Form("clip"),
+        mode: str = Form("streaming"),
+        max_frames: int = Form(0, description="Cap on generated frames (25fps). 0 = auto from audio length."),
+        offload_model: bool = Form(False, description="Offload DiT to CPU between chunks. Slower; use only if VRAM < 24 GB."),
     ):
         if size not in ("infinitetalk-480", "infinitetalk-720"):
             raise HTTPException(400, "size must be infinitetalk-480 or infinitetalk-720")
@@ -430,15 +475,34 @@ def create_app(runner_args) -> FastAPI:
                  f"({len(img_bytes)} B, ct={image.content_type})")
         log.info(f"[{job_id}] upload: audio={audio.filename} -> {aud_path.name} "
                  f"({len(aud_bytes)} B, ct={audio.content_type})")
+
+        # Auto-derive max_frames from audio duration if the caller didn't set one.
+        # Upstream's default of 1000 caps output at 40s @ 25 fps, silently
+        # truncating any longer audio. We size the cap to cover the whole audio.
+        if max_frames <= 0:
+            try:
+                dur = _audio_duration_seconds(aud_path)
+                max_frames = _audio_to_max_frames(dur)
+                log.info(f"[{job_id}] audio duration={dur:.2f}s -> "
+                         f"auto max_frames={max_frames} (25 fps + 1s safety)")
+            except Exception as e:
+                log.warning(f"[{job_id}] could not read audio duration ({e}); "
+                            f"falling back to upstream default (1000 frames / 40s)")
+                max_frames = 0  # pipeline keeps its default
+        else:
+            log.info(f"[{job_id}] caller-set max_frames={max_frames}")
+
         log.info(f"[{job_id}] params: size={size} mode={mode} "
-                 f"prompt={prompt!r}")
+                 f"offload_model={offload_model} prompt={prompt!r}")
 
         job = Job(
             id=job_id, prompt=prompt, size=size, mode=mode,
             image_path=str(img_path), audio_path=str(aud_path),
+            max_frames=max_frames, offload_model=offload_model,
         )
         store.add(job)
-        return {"job_id": job_id, "status": job.status}
+        return {"job_id": job_id, "status": job.status,
+                "max_frames": max_frames, "offload_model": offload_model}
 
     @app.get("/jobs/{job_id}")
     def job_status(job_id: str):
