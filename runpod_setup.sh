@@ -79,12 +79,21 @@ PROFILE="${INFTALK_PROFILE:-single_lightx2v}"
 pip install "huggingface_hub[cli]"
 mkdir -p weights
 
+# Newer huggingface_hub (>=0.30) replaced `huggingface-cli` with `hf`.
+# Prefer `hf` when present, fall back to the old name so this script works on either.
+if command -v hf >/dev/null 2>&1; then
+    HF="hf download"
+else
+    HF="huggingface-cli download"
+fi
+echo "using HuggingFace downloader: $HF"
+
 # --- shared deps: needed for every profile ---
-huggingface-cli download Wan-AI/Wan2.1-I2V-14B-480P \
+$HF Wan-AI/Wan2.1-I2V-14B-480P \
     --local-dir ./weights/Wan2.1-I2V-14B-480P
-huggingface-cli download TencentGameMate/chinese-wav2vec2-base \
+$HF TencentGameMate/chinese-wav2vec2-base \
     --local-dir ./weights/chinese-wav2vec2-base
-huggingface-cli download TencentGameMate/chinese-wav2vec2-base model.safetensors \
+$HF TencentGameMate/chinese-wav2vec2-base model.safetensors \
     --revision refs/pr/1 \
     --local-dir ./weights/chinese-wav2vec2-base
 
@@ -93,10 +102,10 @@ case "$PROFILE" in
   single_lightx2v)
     # Single-person, full-precision base + LightX2V distilled LoRA (4 sampling steps).
     # Recommended for A100 / H100 / RTX 4090. ~4x faster than the 40-step default.
-    huggingface-cli download MeiGen-AI/InfiniteTalk \
+    $HF MeiGen-AI/InfiniteTalk \
         --include "single/*" \
         --local-dir ./weights/InfiniteTalk
-    huggingface-cli download Kijai/WanVideo_comfy \
+    $HF Kijai/WanVideo_comfy \
         Wan21_T2V_14B_lightx2v_cfg_step_distill_lora_rank32.safetensors \
         --local-dir ./weights
     INFTALK_FILE="weights/InfiniteTalk/single/infinitetalk.safetensors"
@@ -105,24 +114,24 @@ case "$PROFILE" in
   single_fusionx)
     # Single-person, full-precision base + FusionX LoRA (8 sampling steps).
     # ~5x faster than 40-step, slightly higher quality than lightx2v.
-    huggingface-cli download MeiGen-AI/InfiniteTalk \
+    $HF MeiGen-AI/InfiniteTalk \
         --include "single/*" \
         --local-dir ./weights/InfiniteTalk
-    huggingface-cli download vrgamedevgirl84/Wan14BT2VFusioniX \
+    $HF vrgamedevgirl84/Wan14BT2VFusioniX \
         Wan2.1_I2V_14B_FusionX_LoRA.safetensors \
         --local-dir ./weights
     INFTALK_FILE="weights/InfiniteTalk/single/infinitetalk.safetensors"
     EXTRA_FLAGS=$'--lora-dir weights/Wan2.1_I2V_14B_FusionX_LoRA.safetensors \\\n    --lora-scale 1.0 \\\n    --extra-args --sample_steps 8 --sample_text_guide_scale 1.0 --sample_audio_guide_scale 2.0 --sample_shift 2 --mode streaming --motion_frame 9'
     ;;
   single)
-    huggingface-cli download MeiGen-AI/InfiniteTalk \
+    $HF MeiGen-AI/InfiniteTalk \
         --include "single/*" \
         --local-dir ./weights/InfiniteTalk
     INFTALK_FILE="weights/InfiniteTalk/single/infinitetalk.safetensors"
     EXTRA_FLAGS=""
     ;;
   single_fp8)
-    huggingface-cli download MeiGen-AI/InfiniteTalk \
+    $HF MeiGen-AI/InfiniteTalk \
         --include "quant_models/infinitetalk_single_fp8.*" \
         --include "quant_models/t5_fp8.*" \
         --include "quant_models/t5_map_fp8.json" \
@@ -131,14 +140,14 @@ case "$PROFILE" in
     EXTRA_FLAGS="--quant fp8 --quant-dir weights/InfiniteTalk/quant_models/infinitetalk_single_fp8.json"
     ;;
   multi)
-    huggingface-cli download MeiGen-AI/InfiniteTalk \
+    $HF MeiGen-AI/InfiniteTalk \
         --include "multi/*" \
         --local-dir ./weights/InfiniteTalk
     INFTALK_FILE="weights/InfiniteTalk/multi/infinitetalk.safetensors"
     EXTRA_FLAGS=""
     ;;
   multi_fp8)
-    huggingface-cli download MeiGen-AI/InfiniteTalk \
+    $HF MeiGen-AI/InfiniteTalk \
         --include "quant_models/infinitetalk_multi_fp8.*" \
         --include "quant_models/t5_fp8.*" \
         --include "quant_models/t5_map_fp8.json" \
@@ -147,7 +156,7 @@ case "$PROFILE" in
     EXTRA_FLAGS="--quant fp8 --quant-dir weights/InfiniteTalk/quant_models/infinitetalk_multi_fp8.json"
     ;;
   all)
-    huggingface-cli download MeiGen-AI/InfiniteTalk \
+    $HF MeiGen-AI/InfiniteTalk \
         --local-dir ./weights/InfiniteTalk
     INFTALK_FILE="weights/InfiniteTalk/single/infinitetalk.safetensors"
     EXTRA_FLAGS=""
