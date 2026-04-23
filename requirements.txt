@@ -76,7 +76,14 @@ moviepy==1.0.3
 scenedetect>=0.6.7
 
 # --- Distributed inference ---
-xfuser>=0.4.5
+# xfuser UPPER bound is load-bearing:
+# xfuser >=0.4.5 imports `SanaAttnProcessor2_0` from
+# diffusers.models.transformers.sana_transformer at module load time.
+# That symbol was introduced in diffusers 0.33. We can't use diffusers>=0.33
+# (the attention-dispatch module there uses PEP-604 custom-op syntax that
+# torch 2.4's _library.infer_schema rejects -- see diffusers pin above).
+# So we downgrade xfuser to a release that works with diffusers 0.32.
+xfuser>=0.4.3,<0.4.5
 
 # --- Audio ---
 # Used by generate_infinitetalk.py (audio_prepare_*, get_embedding) and app.py.
