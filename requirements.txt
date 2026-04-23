@@ -41,7 +41,12 @@ flash_attn==2.7.4.post1
 
 # --- Core ML / diffusion stack ---
 # transformers v5 introduces breaking changes; pin to 4.x until upstream model code is ported.
-transformers>=4.49.0,<5
+# transformers UPPER bound is load-bearing:
+# 4.50 dropped the Flax-related re-exports (FLAX_WEIGHTS_NAME etc.) from
+# transformers.utils. diffusers 0.32 still imports FLAX_WEIGHTS_NAME at module
+# load time, so any transformers>=4.50 breaks `from diffusers import DiffusionPipeline`
+# before a single pipeline can be instantiated.
+transformers>=4.49.0,<4.50
 tokenizers>=0.20.3,<0.23
 # diffusers: UPPER bound is load-bearing. Versions >=0.33 register a
 # torch custom op using PEP-604 `torch.Tensor | None` syntax in the
