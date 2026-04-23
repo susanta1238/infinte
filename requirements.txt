@@ -9,13 +9,15 @@
 # `pip install -r requirements.txt`. The base image already has torch 2.4.0+cu124
 # installed, so normally you only need:
 #
-#   pip install -U xformers==0.0.28.post2 --index-url https://download.pytorch.org/whl/cu124
+#   pip install xformers==0.0.27.post2
 #   pip install flash_attn==2.7.4.post1
 #
-# WHY post2 (not post3): xformers 0.0.28.post3 wheels were built against torch
-# 2.5.1. Using them with torch 2.4.x silently disables the C++ extensions
-# (memory-efficient attention falls back to slow path). post2 is the matching
-# build for torch 2.4.x.
+# WHY 0.0.27.post2 (not 0.0.28.*): every xformers 0.0.28.postN PyPI wheel
+# (post1/post2/post3) was built against torch 2.5.x. Running them on torch 2.4
+# silently disables the C++ kernels (verified: "xFormers was built for PyTorch
+# 2.5.x (you have 2.4.1+cu124)" warning at import, then every call to
+# memory_efficient_attention raises "No operator found").
+# 0.0.27.post2 is the last release compiled against torch 2.4.
 #
 # The pins below exist so that resolving this file CANNOT upgrade torch or its
 # CUDA-linked siblings. Without these pins, `accelerate>=1.1.1` resolves to
@@ -28,10 +30,13 @@
 torch==2.4.0
 torchvision==0.19.0
 torchaudio==2.4.0
-# xformers 0.0.28.post2 has cp311 + cu124 wheels built for torch 2.4.x.
-# Do NOT use post3 (built for torch 2.5.1 -- causes the C++ extension to fail
-# to load and silently falls back to the slow path).
-xformers==0.0.28.post2
+# xformers: MUST match torch 2.4 ABI.
+# IMPORTANT FINDING: all xformers 0.0.28.postN PyPI wheels (post1/post2/post3)
+# were built against torch 2.5.x -- the C++ extension fails to load on torch 2.4,
+# xformers.ops falls back to slow/no-op path, and the audio cross-attention
+# in wan/modules/attention.py can't run. Pin to 0.0.27.post2 which is the last
+# release explicitly compiled against torch 2.4.
+xformers==0.0.27.post2
 flash_attn==2.7.4.post1
 
 # --- Core ML / diffusion stack ---

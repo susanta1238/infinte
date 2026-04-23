@@ -43,7 +43,10 @@ assert torch.__version__.startswith("2.4."), \
 PY
 
 # 3. xformers (matching torch 2.4.0 + cu124 + py311).
-pip install --no-deps xformers==0.0.28.post2 --index-url https://download.pytorch.org/whl/cu124
+# xformers 0.0.27.post2 is the last release compiled against torch 2.4.
+# 0.0.28 and later .postN wheels all target torch 2.5.x and will silently
+# fail to load the CUDA extension on torch 2.4.
+pip install --no-deps xformers==0.0.27.post2
 
 # 4. flash-attn prerequisites, then flash-attn itself.
 #    2.7.4.post1 publishes cp311 wheels for torch 2.4, so this is a fast wheel pull.
