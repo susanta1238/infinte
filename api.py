@@ -398,7 +398,19 @@ class InfiniteTalkRunner:
 def create_app(runner_args) -> FastAPI:
     app = FastAPI(title="InfiniteTalk API", version="1.0")
     storage = Path(runner_args.storage_root).resolve()
-    store = JobStore(storage, InfiniteTalkRunner(runner_args))
+
+    # Pick the runner. Hot runner keeps the pipeline resident for the life of
+    # the API process (jobs skip the ~7-minute model load). Subprocess runner
+    # is the safe fallback: every job gets a fresh Python process.
+    if runner_args.hot:
+        from api_pipeline import build_hot_runner
+        log.info("HOT mode: loading pipeline now (first request will be fast).")
+        runner = build_hot_runner(runner_args)
+    else:
+        log.info("SUBPROCESS mode: every request launches a fresh Python process.")
+        runner = InfiniteTalkRunner(runner_args)
+
+    store = JobStore(storage, runner)
 
     @app.middleware("http")
     async def log_requests(request: Request, call_next):
@@ -549,6 +561,15 @@ def _parse():
     p.add_argument("--wav2vec-dir", required=True)
     p.add_argument("--infinitetalk-dir", required=True)
 
+    # --hot: load the pipeline once at startup and keep it in-process.
+    # Every subsequent request skips the ~7-minute reload that the subprocess
+    # runner pays per job. Recommended on a dedicated inference pod.
+    p.add_argument("--hot", action="store_true", default=True,
+                   help="Keep pipeline loaded in API process (default on). "
+                        "Disable with --no-hot for subprocess-per-job fallback.")
+    p.add_argument("--no-hot", dest="hot", action="store_false",
+                   help="Use subprocess-per-job (every request loads the model fresh).")
+
     p.add_argument("--quant", choices=["int8", "fp8"], default=None)
     p.add_argument("--quant-dir", default=None)
     p.add_argument("--num-persistent-param-in-dit", type=int, default=None,
@@ -557,7 +578,8 @@ def _parse():
     p.add_argument("--lora-dir", nargs="+", default=None)
     p.add_argument("--lora-scale", nargs="+", type=float, default=None)
     p.add_argument("--extra-args", nargs=argparse.REMAINDER, default=[],
-                   help="Anything after this flag is passed through verbatim.")
+                   help="Anything after this flag is passed through verbatim "
+                        "(only used in --no-hot mode).")
 
     return p.parse_args()
 
